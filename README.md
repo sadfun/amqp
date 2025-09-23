@@ -17,7 +17,7 @@ This package aims to fill that gap by providing a thin wrapper around `amqp091-g
 ## Quick Start
 
 ```bash
-go get github.com/sadfun/amqp
+go get -u github.com/sadfun/amqp
 ```
 
 ```go
@@ -30,7 +30,7 @@ import (
     "time"
 
     "github.com/rabbitmq/amqp091-go"
-    "github.com/sadfun/amqp" // replace with the actual import path
+    "github.com/sadfun/amqp"
 )
 
 func main() {
