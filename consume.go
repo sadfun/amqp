@@ -3,24 +3,35 @@ package amqp
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type ConsumeOptions struct {
-	AutoAck        bool
-	Exclusive      bool
-	NoLocal        bool
-	Args           amqp.Table
-	Concurrency    int  // number of handler workers; default 1
-	RequeueOnError bool // when handler returns error and AutoAck==false
+	AutoAck     bool
+	Exclusive   bool
+	NoLocal     bool
+	Args        amqp.Table
+	Concurrency int // number of handler workers; default 1
 }
 
-// Handler is invoked for each delivery. Return nil to ack (when AutoAck==false),
-// or an error to Nack (with RequeueOnError). If AutoAck==true, your return value
-// is ignored for acking purposes.
-type Handler func(context.Context, amqp.Delivery) error
+type ConsumeResult int
+
+const (
+	Ack ConsumeResult = iota
+	NackRequeue
+	NackDiscard
+)
+
+// Handler is invoked for each delivery. It must return a ConsumeResult,
+// which controls how the delivery is acknowledged:
+// - Ack: acknowledge the delivery (= d.Ack(false)).
+// - NackRequeue: negative-acknowledge the delivery and requeue it (= d.Nack(false, true)).
+// - NackDiscard: negative-acknowledge the delivery and discard it (= d.Nack(false, false)).
+// You must not Ack/Nack the delivery yourself.
+type Handler func(context.Context, amqp.Delivery) ConsumeResult
 
 // Consume blocks until ctx is done, (re)subscribing after reconnects.
 // It never declares topology, do that in your TopologyFunc.
@@ -94,13 +105,23 @@ func (s *Session) Consume(ctx context.Context, queue, consumerTag string, opt Co
 							}
 							continue
 						}
-						if err := h(ctx, d); opt.AutoAck {
+
+						result := h(ctx, d)
+						if opt.AutoAck {
 							// Broker already acked; handler controls side effects only.
 							continue
-						} else if err == nil {
+						}
+
+						switch result {
+						case Ack:
 							_ = d.Ack(false)
-						} else {
-							_ = d.Nack(false, opt.RequeueOnError)
+						case NackRequeue:
+							_ = d.Nack(false, true)
+						case NackDiscard:
+							_ = d.Nack(false, false)
+						default:
+							slog.Warn("Unknown ConsumeResult from handler; Nacking with requeue", "result", result)
+							_ = d.Nack(false, true)
 						}
 					}
 				}
