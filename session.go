@@ -69,11 +69,16 @@ type Session struct {
 // New creates an unstarted Session.
 // Provide a TopologyFunc that DECLARES your topology idempotently (exchanges,
 // queues, bindings, QoS, confirm mode, etc.). It will be run on every connect.
-func New(url string, topo TopologyFunc, backoff Backoff) *Session {
+func New(url string, topo TopologyFunc, backoff ...Backoff) *Session {
+	backoffValue := Backoff{}
+	if len(backoff) > 0 {
+		backoffValue = backoff[0]
+	}
+
 	return &Session{
 		url:      url,
 		topo:     topo,
-		backoff:  backoff.norm(),
+		backoff:  backoffValue.norm(),
 		ready:    make(chan struct{}), // not ready until Start runs a connect
 		closedCh: make(chan struct{}),
 	}
