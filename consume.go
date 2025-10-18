@@ -6,16 +6,18 @@ import (
 	"log/slog"
 	"sync"
 
-	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/rabbitmq/amqp091-go"
 )
 
 type ConsumeOptions struct {
 	AutoAck     bool
 	Exclusive   bool
 	NoLocal     bool
-	Args        amqp.Table
+	Args        amqp091.Table
 	Concurrency int // number of handler workers; default 1
 }
+
+type Delivery amqp091.Delivery
 
 type ConsumeResult int
 
@@ -31,7 +33,7 @@ const (
 // - NackRequeue: negative-acknowledge the delivery and requeue it (= d.Nack(false, true)).
 // - NackDiscard: negative-acknowledge the delivery and discard it (= d.Nack(false, false)).
 // You must not Ack/Nack the delivery yourself.
-type Handler func(context.Context, amqp.Delivery) ConsumeResult
+type Handler func(context.Context, Delivery) ConsumeResult
 
 // Consume blocks until ctx is done, (re)subscribing after reconnects.
 // It never declares topology, do that in your TopologyFunc.
@@ -46,16 +48,16 @@ func (s *Session) Consume(ctx context.Context, queue, consumerTag string, opt Co
 		}
 
 		var (
-			deliveries <-chan amqp.Delivery
+			deliveries <-chan amqp091.Delivery
 			err        error
 			cancelC    <-chan string
-			closeC     <-chan *amqp.Error
+			closeC     <-chan *amqp091.Error
 		)
 
 		// Establish the consumer on the live channel and hook cancel/close notifs.
-		err = s.WithChannel(ctx, func(ch *amqp.Channel) error {
+		err = s.WithChannel(ctx, func(ch *amqp091.Channel) error {
 			cancelC = ch.NotifyCancel(make(chan string, 1))
-			closeC = ch.NotifyClose(make(chan *amqp.Error, 1))
+			closeC = ch.NotifyClose(make(chan *amqp091.Error, 1))
 			d, e := ch.Consume(
 				queue,
 				consumerTag,
@@ -106,7 +108,7 @@ func (s *Session) Consume(ctx context.Context, queue, consumerTag string, opt Co
 							continue
 						}
 
-						result := h(ctx, d)
+						result := h(ctx, Delivery(d))
 						if opt.AutoAck {
 							// Broker already acked; handler controls side effects only.
 							continue
